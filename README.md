@@ -14,6 +14,58 @@
 
 - 추가로 리레이블링하는 메트릭은 기존 메트릭의 재가공일 수도 있고 엔드포인트를 추가하여 Istio처럼 기본 리소스가 아닌 리소스의 지표를 추출할 수도 있다.
 
+- /status에서는 프로메테우스의 상태, /metrics에서는 시스템 메트릭의 값, /graph에서는 수집한 메트릭을 PromQL로 조회하거나 그래프를 볼 수 있다.
+
+- PromQL은 프로메테우스가 저장한 메트릭을 조회하는 쿼리문이다. `count(count by(__name__)({__name__!~"prometheus_.*|go_.*|net_conntrack.*", job!=""}))` 시스템 메트릭 몇가지를 제외한 나머지 메트릭 종류의 수를 구하는 쿼리문이다.
+
+```yaml
+alertmanager:
+  enabled: false
+prometheus:
+  enabled: true
+  nodeSelector:
+    nodetype: prometheus
+  service:
+    type: NodePort
+    # nodePort: 30008
+    annotations:
+      prometheus.io/scrape: "true"
+  prometheusSpec:
+    scrapeInterval: 10s
+    evaluationInterval: 10s
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp2
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 100Gi
+    resources:
+      requests:
+        memory: "20Gi"
+        cpu: "3"
+    additionalScrapeConfigs:
+            - job_name: "istiod"
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - istio-system
+        relabel_configs:
+          - source_labels:
+              [
+                __meta_kubernetes_service_name,
+                __meta_kubernetes_endpoint_port_name,
+              ]
+            action: keep
+            regex: istiod;http-monitoring
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            action: keep
+            regex: (istio_request_duration_milliseconds_bucket|istio_requests_total)
+```
+
 ## 모니터링 툴이 수집하는 데이터의 유형
 
 - 우선 로그와 메트릭으로 이분할 수 있는데 두 데이터의 차이는 컨텍스트가 있는가 없는가이다.
